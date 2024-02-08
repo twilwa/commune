@@ -4,7 +4,7 @@ import pandas as pd
 from typing import List, Dict, Union
 import commune as c
 
-class Docker(c.Module): 
+class Docker(c.Module):
     @classmethod
     def dockerfile(cls, path = c.repo_path): 
         path =  [f for f in c.ls(path) if f.endswith('Dockerfile')][0]
@@ -12,7 +12,6 @@ class Docker(c.Module):
     
     @classmethod
     def resolve_repo_path(cls, path):
-
         if path is None:
             path = c.repo_path
         else:
@@ -26,7 +25,6 @@ class Docker(c.Module):
     def resolve_docker_compose_path(cls,path = None):
         path = cls.resolve_repo_path(path)
         return [f for f in c.ls(path) if 'docker-compose' in os.path.basename(f)][0]
-        return path
 
     @classmethod
     def docker_compose(cls, path = c.repo_path): 
@@ -37,23 +35,47 @@ class Docker(c.Module):
     def resolve_docker_path(cls, path = None):
         path = cls.resolve_repo_path(path)
         return [f for f in c.ls(path) if 'Dockerfile' in os.path.basename(f)][0]
-        return path
     
     @classmethod
-    def build(cls, path , tag = None , sudo=False, verbose=True, env={'DOCKER_BUILDKIT':'1'}):
+    def build(cls, path , tag = None , sudo=False, verbose=True, no_cache=False, env={}):
 
         path = cls.resolve_docker_path(path)
         if tag is None:
             tag = path.split('/')[-2]
 
-        return c.cmd(f'docker build -t {tag} .', sudo=sudo, env=env,cwd=os.path.dirname(path),  verbose=verbose)
-    
-    def kill(self, name, sudo=False, verbose=True):
+        cmd = f'docker build -t {tag} .'
+        if no_cache:
+            cmd += ' --no-cache'
+        return c.cmd(cmd, sudo=sudo, env=env,cwd=os.path.dirname(path),  verbose=verbose)
+    @classmethod
+    def kill(cls, name, sudo=False, verbose=True):
         c.cmd(f'docker kill {name}', sudo=sudo, verbose=verbose)
         c.cmd(f'docker rm {name}', sudo=sudo, verbose=verbose)
+        return {'status': 'killed', 'name': name}
 
-    def exists(self, name:str):
-        return name in self.ps()
+    @classmethod
+    def kill_many(cls, name, sudo=False, verbose=True):
+        servers = cls.ps(name)
+        for server in servers:
+            cls.kill(server, sudo=sudo, verbose=verbose)
+            c.print(f'killed {server}', verbose=verbose)
+        return {'status': 'killed', 'name': name}
+
+    @classmethod
+    def kill_all(cls, sudo=False, verbose=True):
+        servers = cls.ps()
+        for server in servers:
+            cls.kill(server, sudo=sudo, verbose=verbose)
+            c.print(f'killed {server}', verbose=verbose)
+        return {'status': 'killed'}
+    @classmethod
+    def rm(cls, name, sudo=False, verbose=True):
+        c.cmd(f'docker rm {name}', sudo=sudo, verbose=verbose)
+        return {'status': 'removed', 'name': name}
+
+    @classmethod
+    def exists(cls, name:str):
+        return name in cls.ps()
 
     @classmethod
     def rm_sudo(cls, sudo:bool=True, verbose:bool=True):
@@ -100,34 +122,54 @@ class Docker(c.Module):
     #     self.build(path=self.libpath, sudo=sudo)
 
     @classmethod
-    def build(cls,path:str = None, tag:str = None,  sudo=False):
-        path = cls.resolve_dockerfile(path)
+    def images(cls, to_records=True):
+        text = c.cmd('docker images', verbose=False)
+        df = []
+        cols = []
+        for i, l in enumerate(text.split('\n')):
+            if len(l) > 0:
+                if i == 0:
+                    cols = [_.strip().replace(' ', '_').lower() for _ in l.split('  ') if len(_) > 0]
+                else:
+                    df.append([_.strip() for _ in l.split('  ') if len(_) > 0])
+        df = pd.DataFrame(df, columns=cols) 
+        if to_records:
+            return df.to_records()
+        return df
+    
+    def rm_image(self, image_id):
+        response = {'success': False, 'image_id': image_id}
+        c.cmd(f'docker image rm -f {image_id}', verbose=True)
+        response['success'] = True
+        return response
 
-        if tag is None:
-            tag = path.split('/')[-2]
-        assert tag is not None, 'tag must be specified'
+    def rm_images(self, search:List[str]=None):
+        image_records = self.images(to_records=False)
+        responses = []
+        for i, image_record in image_records.iterrows():
+            image_dict = image_record.to_dict()
 
-        cmd = f'docker build -t {tag} .'
-        dockerfile_dir = os.path.dirname(path)
-
-        c.cmd(cmd,cwd = dockerfile_dir, env={'DOCKER_BUILDKIT':'1'}, verbose=True, sudo=sudo, bash=False)
+            if search == None or str(search.lower()) in image_dict['repository']:
+                r = self.rm_image(image_dict['image_id'])
+                responses.append(r)
+                
+        return {'success': True, 'responses': responses }
+    
 
     @classmethod
-    def images(cls, df=True):
-        text = c.cmd('docker images', verbose=False)
-        if df:
-            df = []
-            cols = []
-            for i, l in enumerate(text.split('\n')):
-                if len(l) > 0:
-                    if i == 0:
-                        cols = [_.strip().replace(' ', '_') for _ in l.split('  ') if len(_) > 0]
-                    else:
-                        df.append([_.strip() for _ in l.split('  ') if len(_) > 0])
-            df = pd.DataFrame(df, columns=cols)    
-            return df
+    def image2id(cls, image=None):
+        image2id = {}
+        df = cls.images()
+        for  i in range(len(df)):
+            image2id[df['REPOSITORY'][i]] = df['IMAGE_ID'][i]
+        if image != None:
+            id = image2id[image]
+        return id
+            
+
         
-        return [l.split(' ')[0] for l in text.split('\n') if len(l) > 0][1:]
+    
+
 
 
     @classmethod
@@ -213,7 +255,7 @@ class Docker(c.Module):
        
     
     @classmethod
-    def psdf(cls, load=True, save=False, keys = [ 'container_id', 'names', 'ports'], idx_key ='container_id'):
+    def psdf(cls, load=True, save=False, idx_key ='container_id'):
         output_text = c.cmd('docker ps', verbose=False)
 
         rows = []
@@ -226,21 +268,24 @@ class Docker(c.Module):
                     row_splits = row.split(NA_SPACE)
                     row = row_splits[0] + '  NA  ' + ' '.join(row_splits[1:])
                 row = [_.strip() for _ in row.split('  ') if len(_) > 0]
-                rows.append(row)
+                if len(row) == len(columns):
+                    rows.append(row)
+                else:
+                    c.print(rows)
 
         df = pd.DataFrame(rows, columns=columns)
-        df['ports'] = df['ports'].apply(lambda x: x.split('->')[0].strip() if len(x.split('->')) > 1 else x)
-        df = df[keys]
         df.set_index(idx_key, inplace=True)
         return df   
 
     @classmethod
-    def ps(cls, path = None):
-        df = cls.psdf()
-        paths =  df['names'].tolist()
-        if path != None:
-            paths = [p for p in paths if path in p]
+    def ps(cls, search = None, df:bool = False):
 
+        psdf = cls.psdf()
+        paths =  psdf['names'].tolist()
+        if search != None:
+            paths = [p for p in paths if p != None and search in p]
+        if df:
+            return psdf
         return paths
     
 
@@ -372,5 +417,22 @@ class Docker(c.Module):
         c.cmd(f'docker rm -f {name}', verbose=True)
 
     @classmethod
-    def logs(cls, name, sudo=False, follow=False, verbose=False):
-        return c.cmd(f'docker  logs {name} {"-f" if follow else ""}', verbose=verbose)
+    def logs(cls, name, sudo=False, follow=False, verbose=False, tail:int=100):
+        cmd = f'docker  logs {name} {"-f" if follow else ""} --tail {tail}'
+        return c.cmd(cmd, verbose=verbose)
+
+    def log_map(self, search=None):
+        nodes = self.ps(search=search)
+        return {name: self.logs(name) for name in nodes}
+
+    @classmethod
+    def tag(cls, image:str, tag:str):
+        c.cmd(f'docker tag {image} {tag}', verbose=True)
+        c.cmd(f'docker push {tag}', verbose=True)
+    @classmethod
+    def login(self, username:str, password:str):
+        c.cmd(f'docker login -u {username} -p {password}', verbose=True)
+
+    @classmethod
+    def logout(self, image:str):
+        c.cmd(f'docker logout {image}', verbose=True)

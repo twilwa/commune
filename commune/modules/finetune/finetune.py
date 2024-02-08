@@ -3,16 +3,13 @@ import logging
 
 import torch
 from datasets import load_dataset
-from peft import LoraConfig, TaskType, get_peft_model, prepare_model_for_int8_training
+from peft import LoraConfig, get_peft_model, prepare_model_for_int8_training
 from trl import SFTTrainer
 
 from transformers import (
     AutoModelForCausalLM,
     AutoTokenizer,
     BitsAndBytesConfig,
-    DataCollatorForSeq2Seq,
-    Seq2SeqTrainer,
-    Seq2SeqTrainingArguments,
     TrainingArguments,
 )
 
@@ -126,6 +123,7 @@ class FineTuner(c.Module):
         self.model = AutoModelForCausalLM.from_pretrained(config.model, quantization_config=quantization_config)
         if config.load:
             self.load_checkpoint()
+
 
     def set_dataset(self, config):
 

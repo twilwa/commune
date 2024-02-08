@@ -14,7 +14,7 @@ class Thread(c.Module):
                     tag_seperator:str=':'):
 
         if isinstance(fn, str):
-            fn = c.resolve_fn(fn)
+            fn = c.get_fn(fn)
         if args == None:
             args = []
         if kwargs == None:
@@ -50,11 +50,13 @@ class Thread(c.Module):
         import queue
         return queue.Queue(maxsize=maxsize)
 
-    def join_threads(self, threads:[str, list]):
+    @classmethod
+    def join_threads(cls, threads:[str, list]):
 
-        threads = self.thread_map
-        for t in threads:
-            self.join_thread(t)
+        threads = cls.thread_map
+        for t in threads.values():
+            # throw error if thread is not in thread_map
+            t.join()
 
     @classmethod
     def thread_fleet(cls, fn:str, n=10,  tag:str=None,  args:list = None, kwargs:dict=None):
@@ -72,9 +74,12 @@ class Thread(c.Module):
     def threads(cls, *args, **kwargs):
         return list(cls.thread_map(*args, **kwargs).keys())
 
-
-
-    def test(self):
+    @classmethod
+    def num_threads(cls) -> int:
+        return len(cls.thread_map)
+    @classmethod
+    def test(cls):
+        self = cls()
         def fn():
             print('fn')
             c.sleep(1)
