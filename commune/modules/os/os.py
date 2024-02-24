@@ -188,6 +188,9 @@ class OsModule(c.Module):
         return torch.cuda.device_count()
     
     
+    def add_rsa_key(self, b=2048, t='rsa'):
+        return c.cmd(f"ssh-keygen -b {b} -t {t}")
+    
     @classmethod
     def cmd(cls, 
                     command:Union[str, list],
@@ -200,6 +203,7 @@ class OsModule(c.Module):
                     return_process: bool = False,
                     generator: bool =  False,
                     color : str = 'white',
+                    inputs : List[str] = [],
                     **kwargs) -> 'subprocess.Popen':
         
         '''
@@ -241,6 +245,10 @@ class OsModule(c.Module):
         def stream_output(process):
             pipe = process.stdout
             for ch in iter(lambda: pipe.read(1), b""):
+                # if the the terminal is stuck and needs to enter
+                process.poll() 
+
+
                 try:
                     yield ch.decode()
                 except Exception as e:
@@ -367,9 +375,11 @@ class OsModule(c.Module):
 
         gpu_info_map = {}
 
+        skip_keys =  ['ratio', 'total', 'name']
+
         for gpu_id, gpu_info in gpu_info.items():
             for key, value in gpu_info.items():
-                if key in ['ratio', 'total']:
+                if key in skip_keys:
                     continue
                 gpu_info[key] = cls.format_data_size(value, fmt=fmt)
             gpu_info_map[gpu_id] = gpu_info

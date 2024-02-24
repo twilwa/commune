@@ -133,11 +133,12 @@ class RemoteDashboard(Remote):
         self.sidebar()
         self.ssh_dashboard()
 
-
     def sidebar(self, **kwargs):
         with st.sidebar:
             self.filter_hosts()
             self.manage_hosts()
+            with st.expander('host2ssh'):
+                st.write(self.host2ssh)
 
 
     def filter_hosts(self, **kwargs):
@@ -183,7 +184,6 @@ class RemoteDashboard(Remote):
         host2ssh =  {}
         with st.expander(f'Hosts (n={n})', expanded=False):
             host_names = st.multiselect('Host', host_names, host_names)
-            
             for host_name, host in host_map.items():
                 cols = st.columns([1,4])
                 cols[0].write('#### '+host_name)
@@ -193,6 +193,8 @@ class RemoteDashboard(Remote):
 
         self.host2ssh = host2ssh
         self.host_map = host_map
+
+
 
 
     def manage_hosts(self):
@@ -221,19 +223,10 @@ class RemoteDashboard(Remote):
     def ssh_dashboard(self):
         import streamlit as st
         host_map = self.host_map
-
         host_names = list(host_map.keys())
-        
-
-
-                        
-        # progress bar
-
-        
-
+    
         # add splace to cols[2] vertically
         
-
         with st.expander('params', False):
             cols = st.columns([4,4,2])
             cwd = cols[0].text_input('cwd', '/')
@@ -266,7 +259,6 @@ class RemoteDashboard(Remote):
             futures = list(host2future.values())
             num_jobs = len(futures )
             hosts = list(host2future.keys())
-            host2error = {}
             cols = st.columns(4)
             failed_hosts = []
 

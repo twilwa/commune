@@ -28,7 +28,8 @@ class Vali(c.Module):
         # we want to make sure that the config is a munch
         self.start_time = c.time()
         self.sync_network()
-        if self.config.run_loop:
+        #
+        if self.config.start:
             c.thread(self.run_loop)
 
     def run_info(self):
@@ -41,31 +42,31 @@ class Vali(c.Module):
             'workers': self.workers()
         }
         return info
+    
     def run_loop(self):
-        
-        if self.config.start:
-            c.print(f'Vali config: {self.config}', color='cyan')
-            if self.config.vote_tag == None:
-                self.start_workers(num_workers=self.config.num_workers, 
-                                   refresh=self.config.refresh, 
-                                   mode=self.config.mode)
-                steps = 0
-                c.print(f'Vali loop started', color='cyan')
-            while True:
-                try:
-                    steps += 1
-                    c.print(f'Vali loop step {steps}', color='cyan')
-                    run_info = self.run_info()
-                    # sometimes the worker thread stalls, and you can just restart it
-                    if 'subspace' in self.config.network:
-                        if run_info['vote_staleness'] > self.config.vote_interval:
-                            response = self.vote()
-                            c.print(response)
-                    c.print(run_info)
-                    c.print('Sleeping... for {}', color='cyan')
-                    c.sleep(self.config.run_loop_sleep)
-                except Exception as e: 
-                    c.print(e, color='red')
+    
+        c.print(f'Vali config: {self.config}', color='cyan')
+        if self.config.vote_tag == None:
+            self.start_workers(num_workers=self.config.num_workers, 
+                                refresh=self.config.refresh, 
+                                mode=self.config.mode)
+            steps = 0
+            c.print(f'Vali loop started', color='cyan')
+        while True:
+            try:
+                steps += 1
+                c.print(f'Vali loop step {steps}', color='cyan')
+                run_info = self.run_info()
+                # sometimes the worker thread stalls, and you can just restart it
+                if 'subspace' in self.config.network:
+                    if run_info['vote_staleness'] > self.config.vote_interval:
+                        response = self.vote()
+                        c.print(response)
+                c.print(run_info)
+                c.print('Sleeping... for {}', color='cyan')
+                c.sleep(self.config.run_loop_sleep)
+            except Exception as e: 
+                c.print(e, color='red')
 
 
     
@@ -190,6 +191,7 @@ class Vali(c.Module):
         search =  search or self.config.search
         netuid = netuid or self.config.netuid
         
+        # this is only for 
         if 'subspace' in network:
             if '.' in network:
                 """
@@ -206,14 +208,11 @@ class Vali(c.Module):
                 netuid = 0
                 netuid = netuid
             self.subspace = c.module("subspace")(netuid=netuid)
-            self.name2key = self.subspace.name2key(netuid=netuid)
         else:
             self.name2key = {}
 
-
         self.config.network = network
         self.config.netuid = netuid
-        self.config.search = search
 
         self.namespace = c.namespace(search=search, 
                                     network=network, 
@@ -233,7 +232,6 @@ class Vali(c.Module):
                 'msg': 'Synced network'
                 }
         
-        c.print(r)
         return r
         
         
@@ -293,6 +291,7 @@ class Vali(c.Module):
         # if the module is stale, we can just return the module info
         seconds_since_called = c.time() - module_info.get('timestamp', 0)
 
+
         if seconds_since_called < self.config.max_staleness:
             return {'w': module_info.get('w', 0),
                      'module': module_name,
@@ -340,9 +339,14 @@ class Vali(c.Module):
         self.count += 1
         self.last_evaluation_time = c.time()
 
-        response =  {'w': w, 
-                     'module': module_name, 'address': module_address, 'timestamp': c.time(), 'path': path }
+        response =  {'w': w,
+                     'module': module_name, 
+                     'address': module_address, 
+                     'timestamp': c.time(), 
+                     'path': path }
+        
         return response
+    
 
     @classmethod
     def resolve_storage_path(cls, network:str = 'subspace', tag:str=None):
@@ -372,19 +376,11 @@ class Vali(c.Module):
     def votes(self, tag=None, network = None):
         network = network or self.config.network
         tag = tag or self.config.vote_tag or self.tag
-        c.print(f'Calculating votes for {network} {tag}', color='cyan')
-
-        # get the list of modules that was validated
         module_infos = self.module_infos(network=network, keys=['name', 'w', 'ss58_address'], tag=tag)
-        votes = {
-            'keys' : [],            # get all names where w > 0
-            'weights' : [],  # get all weights where w > 0
-            'uids': [],
-            'timestamp' : c.time() 
-        }
-
+        votes = {'keys' : [],'weights' : [],'uids': [], 'timestamp' : c.time()  }
         key2uid = self.subspace.key2uid()
         for info in module_infos:
+            ## valid modules have a weight greater than 0 and a valid ss58_address
             if 'ss58_address' in info and info['w'] >= 0:
                 if info['ss58_address'] in key2uid:
                     votes['keys'] += [info['ss58_address']]
@@ -411,7 +407,7 @@ class Vali(c.Module):
 
     @classmethod
     def tags(cls, network=network, mode='stats'):
-        return list([p.split('/')[-1].split('.')[0] for p in cls.ls()])
+        return list(set(list([p.split('/')[-1].split('.')[0] for p in cls.ls()])))
 
     @classmethod
     def paths(cls, network=network, mode='stats'):
@@ -590,70 +586,9 @@ class Vali(c.Module):
         kwargs['num_workers'] = 0
         kwargs['vote'] = False
         kwargs['verbose'] = True
-        self = cls(**kwargxs )
+        self = cls(**kwargs )
         return self.run()
 
-    @classmethod
-    def dashboard(cls):
-        import streamlit as st
-        # disable the run_loop to avoid the background  thread from running
-        self = cls(start=False)
-        c.load_style()
-        module_path = self.path()
-        network = 'local'
-        c.new_event_loop()
-        
-        st.title(module_path)
-
-        servers = c.servers(search='vali')
-        server = st.selectbox('Select Vali', servers)
-        state_path = f'dashboard/{server}'
-        module = c.module(server)
-        state = module.get(state_path, {})
-        server = c.connect(server)
-        if len(state) == 0 :
-            state = {
-                'run_info': server.run_info(),
-                'module_infos': server.module_infos()
-            }
-
-            self.put(state_path, state)
-
-
-
-        my_modules = c.my_modules()
-        
-        # st.write(my_modules)
-
-
-        run_info = state['run_info']
-        module_infos = state['module_infos']
-        df = []
-        
-
-        default_columns = ['name', 'staleness', 'w', 'timestamp', 'address']
-        for row in module_infos:
-            if isinstance(row, dict):
-                columns = list(row.keys())
-                break
-        selected_columns = default_columns
-
-        search = st.text_input('Search')
-        
-        for row in module_infos:
-            row['name'] = row.get('name', '')
-            if search != '' and search not in row['name']:
-                continue
-            
-            row = {k: row.get(k, None) for k in selected_columns}
-            df += [row]
-        df = c.df(df)
-        if len(df) == 0:
-            st.write('No modules found')
-            return
-        df.sort_values(by=['w', 'staleness'], ascending=False, inplace=True)
-
-        st.write(df)
 
     def __del__(self):
         self.stop()
@@ -666,19 +601,48 @@ class Vali(c.Module):
         return c.wait(futures, timeout=10)
         
 
+    @classmethod
+    def dashboard(cls):
+        import streamlit as st
+        # disable the run_loop to avoid the background  thread from running
+        self = cls(start=False)
+        c.load_style()
+        module_path = self.path()
+        c.new_event_loop()
+        st.title(module_path)
+        servers = c.servers(search='vali')
+        server = st.selectbox('Select Vali', servers)
+        state_path = f'dashboard/{server}'
+        module = c.module(server)
+        state = module.get(state_path, {})
+        server = c.connect(server)
+        if len(state) == 0 :
+            state = {
+                'run_info': server.run_info(),
+                'module_infos': server.module_infos(update=True)
+            }
 
-        
+            self.put(state_path, state)
 
-        # columns = list(df.columns)
-        # columns.pop(columns.index('stake_from'))
-        # with st.expander('Columns'):
-        #     default_columns = ['name', 'stake', 'dividends', 'last_update', 'delegation_fee']
-        #     columns = st.multiselect('Select columns',columns ,default_columns )
-        # df = df[columns]
+        module_infos = state['module_infos']
+        df = []
+        selected_columns = ['name', 'address', 'w', 'staleness']
 
-        # namespace = c.namespace(search=module_path)
+        selected_columns = st.multiselect('Select columns', selected_columns, selected_columns)
+        search = st.text_input('Search')
 
-        # st.write(df)
-        # c.plot_dashboard(df)
+        for row in module_infos:
+            if search != '' and search not in row['name']:
+                continue
+            row = {k: row.get(k, None) for k in selected_columns}
+            df += [row]
+        df = c.df(df)
+        if len(df) == 0:
+            st.write('No modules found')
+        else:
+            default_columns = ['w', 'staleness']
+            sorted_columns = [c for c in default_columns if c in df.columns]
+            df.sort_values(by=sorted_columns, ascending=False, inplace=True)
+        st.write(df)
         
 Vali.run(__name__)

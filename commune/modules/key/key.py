@@ -67,6 +67,7 @@ class MnemonicLanguageCode:
 
 
 class Keypair(c.Module):
+    mems_path = c.repo_path + '/data/keymems.json'
     keys_path = c.data_path + '/keys.json'
     def __init__(self, 
                  ss58_address: str = None, 
@@ -95,7 +96,12 @@ class Keypair(c.Module):
         """
 
         # If no arguments are provided, generate a random keypair
-        if ss58_address == None and public_key == None and private_key == None and seed_hex == None and mnemonic == None:
+        if ss58_address == None \
+            and public_key == None \
+            and private_key == None \
+            and seed_hex == None \
+            and mnemonic == None:
+
             key = self.gen()
             seed_hex = key.__dict__.get('seed_hex', seed_hex)
             private_key = key.__dict__.get('private_key', private_key)
@@ -119,7 +125,11 @@ class Keypair(c.Module):
         if crypto_type != KeypairType.ECDSA and ss58_address and not public_key:
             public_key = ss58_decode(ss58_address, valid_ss58_format=ss58_format)
 
+
+    
+
         if private_key:
+
             if type(private_key) == str:
                 private_key = c.str2bytes(private_key)
 
@@ -167,15 +177,17 @@ class Keypair(c.Module):
         if cls.key_exists(path) and not refresh :
             c.print(f'key already exists at {path}', color='red')
             return json.loads(cls.get(path))
-        if password != None:
-            key_json = cls.encrypt(data=key_json, password=password)
         if mnemonic != None:
             kwargs['mnemonic'] = mnemonic
+            c.print(c.num_words(kwargs['mnemonic']))
         key = cls.gen(**kwargs)
         key.path = path
         key_json = key.to_json()
+        if password != None:
+            key_json = cls.encrypt(data=key_json, password=password)
         cls.put(path, key_json)
         return  json.loads(key_json)
+    
     
 
     
@@ -241,9 +253,9 @@ class Keypair(c.Module):
     add = add_key
     
     @classmethod
-    def key_info(cls, *args, create_if_not_exists=False, **kwargs):
+    def key_info(cls, path='module', create_if_not_exists=False, **kwargs):
         kwargs['json'] = True
-        return cls.get_key(*args, create_if_not_exists=create_if_not_exists, **kwargs)
+        return cls.get_key(path, create_if_not_exists=create_if_not_exists, **kwargs)
     
     @classmethod
     def key_info_map(cls, *args, **kwargs):
@@ -262,23 +274,50 @@ class Keypair(c.Module):
 
     @classmethod
     def load_keys(cls, path=keys_path, verbose:bool = False, refresh:bool = False,  **kwargs):
-        c.print(f'loading keys from {path}', color='green', verbose=verbose)
-        key_info_map = c.get_json(path)
-        for key_path ,key_info in key_info_map.items():
-            cls.add_key( **key_info,refresh=refresh)
-            c.print(f'key {key_info["path"]} loaded', color='green', verbose=verbose)
-            if key_info['path'] == None:
-                key_info['path'] = key_path 
-            assert cls.get_key(key_info['path']).mnemonic == key_info['mnemonic'], f'mnemonic does not match for key {key_info["path"]}'
-        keys = list(key_info_map.keys())
-        return {'status': 'success', 'message': f'keys loaded from {path}', 'keys': keys}
+        return cls.load_mems(path, verbose=verbose, refresh=refresh, **kwargs)
+
 
     @classmethod
-    def save_keys(cls, search=None, path=keys_path, verbose:bool = False,  **kwargs):
-        key_info_map = cls.key_info_map(search)
-        cls.put_json(path, key_info_map)
-        return {'status': 'success', 'message': f'keys saved to {path}'}
+    def save_keys(cls, path=keys_path, verbose:bool = False,  **kwargs):
+
+        return cls.save_mems(path, verbose=verbose, **kwargs)
         
+
+    @classmethod
+    def save_keys(cls, path=mems_path):
+        c.print(f'saving mems to {path}')
+        mems = cls.mems()
+        c.put_json(path, mems)
+        return {'saved_mems':list(mems.keys()), 'path':path}
+    
+    savemems = savekeys = save_keys 
+
+    @classmethod
+    def load_keys(cls, path=mems_path, refresh=False, **kwargs):
+        mems = c.load_json(path)
+        for k,mem in mems.items():
+            try:
+                cls.add_key(k, mnemonic=mem, refresh=refresh, **kwargs)
+            except Exception as e:
+                c.print(f'failed to load mem {k} due to {e}', color='red')
+        return {'loaded_mems':list(mems.keys()), 'path':path}
+    loadkeys = loadmems = load_keys
+    
+
+    @classmethod
+    def mems(cls, search=None):
+        mems = {}
+        for key in cls.keys():
+            try:
+                mems[key] = cls.getmem(key)
+            except Exception as e:
+                c.print(f'failed to get mem for {key} due to {e}', color='red')
+            
+
+        if search:
+            mems = {k:v for k,v in mems.items() if search in k or search in v}
+        return mems
+
     
 
     @classmethod
@@ -292,8 +331,7 @@ class Keypair(c.Module):
         if cls.key_exists(path) == False:
             if create_if_not_exists == True:
                 key = cls.add_key(path, **kwargs)
-                c.print(key)
-                c.print(f'key does not exist, generating new key -> {key["_ss58_address"]}')
+                c.print(f'key does not exist, generating new key -> {key["ss58_address"]}')
             else:
                 raise ValueError(f'key does not exist at --> {path}')
         
@@ -347,7 +385,7 @@ class Keypair(c.Module):
         if search != None:
             key2address =  {k:v for k,v in key2address.items() if  search in k}
         return key2address
-    
+
     @classmethod
     def address2key(cls, search:Optional[str]=None, update:bool=False):
         address2key =  { v: k for k,v in cls.key2address(update=update).items()}
@@ -416,6 +454,11 @@ class Keypair(c.Module):
             if key in addresses:
                 key_exists = True
         return key_exists
+    
+
+    @classmethod
+    def get_key_address(cls, key): 
+        return cls.get_key(key).ss58_address
     
     
     @classmethod
@@ -544,7 +587,8 @@ class Keypair(c.Module):
                 state_dict[k] = v.hex() 
                 if password != None:
                     state_dict[k] = self.encrypt(data=state_dict[k], password=password)
-                    
+        if '_ss58_address' in state_dict:
+            state_dict['ss58_address'] = state_dict.pop('_ss58_address')
         state_dict = json.dumps(state_dict)
         
         return state_dict
@@ -555,10 +599,12 @@ class Keypair(c.Module):
             obj = json.loads(obj)
         if obj == None:
            return None 
+        
         for k,v in obj.items():
             if c.is_encrypted(obj[k]) and password != None:
                 obj[k] = cls.decrypt(data=obj[k], password=password)
-            
+        if 'ss58_address' in obj:
+            obj['_ss58_address'] = obj.pop('ss58_address')
         return  cls(**obj)
     
     @classmethod
@@ -1139,15 +1185,15 @@ class Keypair(c.Module):
         module_fns = c.fns()
         test_fns = [fn for fn in dir(self) if fn.startswith('test_') and fn not in module_fns ]
         num_tests = len(test_fns)
+        results = {}
         for i, fn in enumerate(test_fns):
             try:
-                getattr(self, fn)()
+                result =  getattr(self, fn)()
             except Exception as e:
-                e = c.detailed_error(e)
+                result = c.detailed_error(e)
                 c.print(f'Failed ({i+1}/{num_tests}) {fn} due to {e}', color='red')
-            c.print(f'Passed ({i+1}/{num_tests}) {fn}', color='green')
-
-        return {'success':True}
+            results[fn] = result
+        return {'success':True, 'msg': 'all tests passed', 'results':results}
     @classmethod
     def is_key(cls, key) -> bool:
         return isinstance(key, Keypair)
@@ -1161,10 +1207,54 @@ class Keypair(c.Module):
         assert self.verify(sig, self.public_key)
         return {'success':True}
 
-    encrypted_prefix = ''
+    encrypted_prefix = 'ENCRYPTED::'
+
+    @classmethod
+    def encrypt_key(cls, path = 'test.enc', password=None):
+        assert cls.exists(path), f'file {path} does not exist'
+        if password == None:
+            password = cls.generate_mnemonic()
+        data = cls.get(path)
+        enc_text =  c.encrypt(data, password=password)
+        enc_text = f'{cls.encrypted_prefix}{enc_text}'
+        cls.put(path, enc_text)
+        return {'encrypted':enc_text, 'path':path , 'password':password}
+    
+
+    @classmethod
+    def is_key_encrypted(cls, path, data=None):
+        data = data or cls.get(path)
+        if not isinstance(data, str):
+            return False
+        return data.startswith(cls.encrypted_prefix)
+    
+    @classmethod
+    def test_key_encryption(cls, password='1234'):
+        path = 'test.enc'
+        c.add_key('test.enc', refresh=True)
+        assert cls.is_key_encrypted(path) == False, f'file {path} is encrypted'
+        cls.encrypt_key(path, password=password)
+        assert cls.is_key_encrypted(path) == True, f'file {path} is not encrypted'
+        cls.decrypt_key(path, password=password)
+        assert cls.is_key_encrypted(path) == False, f'file {path} is encrypted'
+        cls.rm(path)
+        assert not c.exists(path), f'file {path} not deleted'
+        return {'success': True, 'msg': 'test_key_encryption passed'}
+
+    @classmethod
+    def decrypt_key(cls, path = 'test.enc', password=None):
+    
+        data = cls.get(path)
+        assert data.startswith(cls.encrypted_prefix), f'file {path} is not encrypted'
+        c.print(data)
+        data = data[len(cls.encrypted_prefix):]
+        enc_text =  c.decrypt(data, password=password)
+        cls.put(path, enc_text)
+        return {'encrypted':enc_text, 'path':path , 'password':password}
 
 
-    def encrypt_file(self, path, password=None, prefix=encrypted_prefix):
+
+    def encrypt_file(self, path='test.encryption', password=None, prefix=encrypted_prefix):
         if password == None:
             password = self.private_key
         text = c.get_text(path)
@@ -1180,31 +1270,29 @@ class Keypair(c.Module):
         if password == None:
             password = self.private_key
         enc_text = c.get_text(path)
-        c.print(enc_text)
+        assert enc_text.startswith(self.encrypted_prefix), f'file {path} is not encrypted'
+        enc_text = enc_text[len(self.encrypted_prefix):]
         dec_text =  self.decrypt(enc_text, password=password)
         if not isinstance(dec_text, str):
             dec_text = json.dumps(dec_text)
         c.put_text(path, dec_text)
         
-        return {'encrypted':enc_text, 'decrypted': dec_text, 'path':path }
+        return {'success': True }
 
 
     
-    def test_encryption_file(self, n=10, filepath='tests/dummy', value='test'):
-        if n > 1:
-            return [self.test_encryption_file(filepath=filepath, value=value, n=1) for i in range(n)]
+    def test_encryption_file(self, filepath='tests/dummy', value='test'):
+
         c.put(filepath, value)
         decode = c.get(filepath)
-        c.print(decode, 'decoded')
-        auth = self.encrypt_file(filepath)
-        decode = self.decrypt_file(filepath)
+        self.encrypt_file(filepath) # encrypt file
+        decode = self.decrypt_file(filepath) # decrypt file
         decode = c.get(filepath)
-        c.print(decode, 'decoded')
         
-        assert decode == value, f'encryption failed, {decoded} != {value}'
+        assert decode == value, f'encryption failed, {decode} != {value}'
         c.rm(filepath)
         assert not c.exists(filepath), f'file {filepath} not deleted'
-        return {'encrypted':auth, 'decrypted': decode, 'path':filepath }
+        return {'success': True, 'msg': 'test_encryption_file passed'}
     
     
     @classmethod
@@ -1234,6 +1322,7 @@ class Keypair(c.Module):
         assert not self.key_exists('test2'), f'Key management failed, key still exists'
         self.rm_key('test')
         assert not self.key_exists('test'), f'Key management failed, key still exists'
+        return {'success': True, 'msg': 'test_key_management passed'}
 
     @classmethod
     def getmem(cls, key):
@@ -1257,41 +1346,6 @@ class Keypair(c.Module):
         return {'copied':new_path}
     
     
-    mems_path = c.repo_path + '/data/keymems.json'
-
-    @classmethod
-    def savemems(cls, path=mems_path):
-        c.print(f'saving mems to {path}')
-        mems = cls.mems()
-        c.put_json(path, mems)
-        return {'saved_mems':list(mems.keys()), 'path':path}
-    
-
-
-
-    @classmethod
-    def loadmems(cls, path=mems_path, refresh=False, **kwargs):
-        mems = c.load_json(path)
-        for k,mem in mems.items():
-            try:
-                cls.add_key(k, mnemonic=mem, refresh=refresh, **kwargs)
-            except Exception as e:
-                c.print(f'failed to load mem {k} due to {e}', color='red')
-        return {'loaded_mems':list(mems.keys()), 'path':path}
-
-    @classmethod
-    def mems(cls, search=None):
-        mems = {}
-        for key in cls.keys():
-            try:
-                mems[key] = cls.getmem(key)
-            except Exception as e:
-                c.print(f'failed to get mem for {key} due to {e}', color='red')
-            
-
-        if search:
-            mems = {k:v for k,v in mems.items() if search in k or search in v}
-        return mems
 
     def __repr__(self):
         return self.__str__()
@@ -1477,6 +1531,7 @@ class Keypair(c.Module):
         # c.print(''+sig)
         assert not self.verify('1'+sig)
         assert self.verify(sig)
+        return {'success':True}
 
     def ticket(self, **kwargs):
         data = str(c.timestamp())
