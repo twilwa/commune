@@ -1,11 +1,21 @@
+# api
+setuptools
 uvicorn
 fastapi
+
+# blockahin
 substrate-interface
+
+# ml
 torch
 safetensors
+# transformers
+
+# visual
 streamlit
 plotly
 gradio
+
 sse-starlette
 #misc
 msgpack_numpy
@@ -21,24 +31,3 @@ aiofiles
 aiohttp
 nest_asyncio
 openai
-
-# scraping
-# beautifulsoup4
-# httplib2
-# urllib3
-# ray
-# ray[default]
-# ray[tune]
-# logging
-# ansible
-# Module for text2speech
-# fairseq2
-# huggingface_hub
-# torchaudio
-# datasets
-# transformers
-# diffusers
-# accelerate
-# openai
-# Module for captcha
-# capmonstercloudclient

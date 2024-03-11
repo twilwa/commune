@@ -1,18 +1,8 @@
 import argparse
 import commune as c
 
-subspace = c.module('subspace')
-config = subspace.config(to_munch=False)
 
-
-urls ={'ws': [], 'http': []}
-for i in range(1,5):
-    name = f"commune-api-node-{i}.communeai.net"
-    urls['ws'].append(f"wss://{name}/")
-    urls['http'].append(f"https://{name}/")
-
-
-config['urls']['commies'] = urls
-
-subspace.save_config(config)
+s = c.module('subspace')()
+modules = ['5GTYocYQoQLFPVNZNN7TVzddwb3v7GZCGs2jbPvg4ja18LTF', '5FCmNmPNrdEf4hUionkibgdPcT4M9MKoKcpkonceck4UxFK5', '5GvRUs7HSNQgwnS2qhSqRKt4ihkcCUoaUyGU68H9vnk6H4VJ']
+s.unstake_many(modules=modules, amounts=100000)
 
