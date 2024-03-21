@@ -6,10 +6,9 @@ from functools import partial
 import commune as c
 import aiohttp
 import json
-from .virtual_client import VirtualClient
+
+
 from aiohttp.streams import StreamReader
-
-
 
 # Define a custom StreamReader with a higher limit
 class CustomStreamReader(StreamReader):
@@ -19,7 +18,7 @@ class CustomStreamReader(StreamReader):
         super().__init__(*args, limit=1024*1024, **kwargs)
 
 
-class ClientHttp(c.Module):
+class Client(c.Module):
 
     def __init__( 
             self,
@@ -37,7 +36,7 @@ class ClientHttp(c.Module):
         self.loop = c.get_event_loop() if loop == None else loop
         self.set_client(ip =ip,port = port)
         self.serializer = c.module(serializer)()
-        self.key = key or c.get_key(key)
+        self.key = c.get_key(key)
         self.my_ip = c.ip()
         self.network = c.resolve_network(network)
         self.start_timestamp = c.timestamp()
@@ -104,7 +103,7 @@ class ClientHttp(c.Module):
                     if self.debug:
                         progress_bar = c.tqdm(desc='MB per Second', position=0)
 
-                    result = []
+                    result = {}
                     
                     async for line in response.content:
                         event_data = line.decode('utf-8')
@@ -130,7 +129,6 @@ class ClientHttp(c.Module):
                         if isinstance(event_data, str):
                             if event_data.startswith('{') and event_data.endswith('}') and 'data' in event_data:
                                 event_data = json.loads(event_data)['data']
-
                             result += [event_data]
                         
                     # process the result if its a json string
@@ -147,24 +145,43 @@ class ClientHttp(c.Module):
                     result = await asyncio.wait_for(response.text(), timeout=timeout)
                 else:
                     raise ValueError(f"Invalid response content type: {response.content_type}")
-        
-        try:
+        if isinstance(result, dict):
             result = self.serializer.deserialize(result)
-        except:
-            pass
-
+        elif isinstance(result, str):
+            result = self.serializer.deserialize(result)
         if isinstance(result, dict) and 'data' in result:
             result = result['data']
-
         if self.save_history:
             input['fn'] = fn
             input['result'] = result
             input['module']  = self.address
             input['latency'] =  c.time() - input['timestamp']
-            self.add_history( input)
-          
+            path = self.history_path+'/' + self.server_name + '/' + str(input['timestamp'])
+            self.put(path, input)
         return result
     
+    @classmethod
+    def history(cls, key=None, history_path='history'):
+        key = c.get_key(key)
+        return cls.ls(history_path + '/' + key.ss58_address)
+    @classmethod
+    def all_history(cls, key=None, history_path='history'):
+        key = c.get_key(key)
+        return cls.glob(history_path)
+        
+
+
+
+    @classmethod
+    def rm_key_history(cls, key=None, history_path='history'):
+        key = c.get_key(key)
+        return cls.rm(history_path + '/' + key.ss58_address)
+    
+    @classmethod
+    def rm_history(cls, key=None, history_path='history'):
+        key = c.get_key(key)
+        return cls.rm(history_path)
+
 
     def process_output(self, result):
         ## handles 
@@ -187,7 +204,7 @@ class ClientHttp(c.Module):
     __call__ = forward
 
     def __str__ ( self ):
-        return f"ClientHttp({self.address})"
+        return "Client({})".format(self.address) 
     def __repr__ ( self ):
         return self.__str__()
     def __exit__ ( self ):
@@ -195,47 +212,8 @@ class ClientHttp(c.Module):
 
 
     def virtual(self):
-        return c.virtual_client(module = self)
+        from .virtual import VirtualClient
+        return VirtualClient(module = self)
     
     def __repr__(self) -> str:
         return super().__repr__()
-
-    # HISTORY
-
-    def add_history(self, item:dict):
-        path = self.history_path+'/' + self.key.ss58_address + '/' + str(item['timestamp'])
-        return self.put(path, item)
-    
-    @classmethod
-    def history_paths(cls, key=None, history_path='history'):
-        key = c.get_key(key)
-        return cls.ls(history_path + '/' + key.ss58_address)
-
-    def history(self, key=None, history_path='history', features=['module', 'fn', 'seconds_ago', 'latency']):
-        key = c.get_key(key)
-        history_path = self.history_paths(key=key, history_path=history_path)
-        df =  c.df([self.get(path) for path in history_path])
-        now = c.timestamp()
-        df['seconds_ago'] = df['timestamp'].apply(lambda x: now - x)
-        df = df[features]
-        return df
-        
-    
-    @classmethod
-    def all_history(cls, key=None, history_path='history'):
-        key = c.get_key(key)
-        return cls.glob(history_path)
-        
-    @classmethod
-    def rm_key_history(cls, key=None, history_path='history'):
-        key = c.get_key(key)
-        return cls.rm(history_path + '/' + key.ss58_address)
-    
-    @classmethod
-    def rm_history(cls, key=None, history_path='history'):
-        key = c.get_key(key)
-        return cls.rm(history_path)
-    
-    def virtual(self):
-        return VirtualClient(module = self)
-

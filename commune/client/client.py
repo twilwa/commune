@@ -7,14 +7,7 @@ import commune as c
 import aiohttp
 import json
 
-import rust # import rust module
-
-
-
-from aiohttp.streams import StreamReader
-
-
-class Client(c.module('client.http')):
+class Client(c.Module):
 
     def __init__( 
             self,
@@ -92,9 +85,6 @@ class Client(c.module('client.http')):
         
         # start a client session and send the request
         async with aiohttp.ClientSession() as session:
-
-            result = rust.fetch_data(url, json=request, headers=headers)  # fetch_data in rust module
-
             async with session.post(url, json=request, headers=headers) as response:
                 if response.content_type == 'text/event-stream':
                     STREAM_PREFIX = 'data: '
@@ -210,7 +200,8 @@ class Client(c.module('client.http')):
 
 
     def virtual(self):
-        return c.virtual_client(module = self)
+        from .virtual import VirtualClient
+        return VirtualClient(module = self)
     
     def __repr__(self) -> str:
         return super().__repr__()
