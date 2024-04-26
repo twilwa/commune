@@ -79,7 +79,7 @@ def get_class_methods(cls: Union[str, type])-> List[str]:
 
     return [k for k, v in signature_map.items() if 'self' not in v]
 
-def get_self_methods(cls: Union[str, type]):
+def get_self_functions(cls: Union[str, type]):
     '''
     Gets the self methods in a class
     '''
@@ -282,3 +282,6 @@ def try_fn_n_times(fn, kwargs:Dict, try_count_limit: int = 10):
         except RuntimeError:
             try_count += 1
     return return_output
+
+
+
