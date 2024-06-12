@@ -1,0 +1,28 @@
+namespace: commune
+commune:
+  defines: runnable
+  metadata:
+    name: commune
+    description: >-
+      A modular, scalable, and robust application for decentralized machine
+      intelligence.
+    icon: https://emojiapi.dev/api/v1/robot.svg
+  containers:
+    commune:
+      build: .
+  services:
+    ray-port:
+      container: commune
+      port: <- $ray-port
+      host-port: <- $ray-port
+      publish: false
+      protocol: TCP
+      description: >-
+        Port used by the Ray framework to provide distributed computing
+        capabilities.
+  variables:
+    ray-port:
+      env: RAY_PORT
+      type: string
+      description: Specifies the port on which the Ray head node listens.
+      value: '6379'
